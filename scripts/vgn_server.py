@@ -1,9 +1,7 @@
 #!/root/mambaforge/envs/vgn/bin/python
 
-from pathlib import Path
 import rospy
 from ros_numpy import numpify
-import cv_bridge
 
 from inference.detection import VGN, select_local_maxima
 from inference.rviz import Visualizer
@@ -19,26 +17,30 @@ from vgn.srv import PredictGrasps,PredictGraspsResponse
 
 class VGNServer:
     def __init__(self):
-        self.frame = rospy.get_param("~frame_id")
-        self.vgn = VGN("src/vgn/models/vgn_conv.pth")
-        rospy.Service("predict_grasps", PredictGrasps, self.predict_grasps)
-        self.length = rospy.get_param("~length")
-        self.resolution = rospy.get_param("~resolution")
-        rospy.Service("reset_map", Empty, self.reset)
         self.reset()
-        self.depth_scale = rospy.get_param("~depth_scale")
-        tf.init()
-        self.cam_frame_id = rospy.get_param("~camera/frame_id")
-        self.frame_id = rospy.get_param("~frame_id")
-        msg = rospy.wait_for_message("camera/info_topic", CameraInfo)
-        self.intrinsic = from_camera_info_msg(msg)
-        self.cv_bridge = cv_bridge.CvBridge()
+        self.length = rospy.get_param("~length",0.3)
+        self.resolution = rospy.get_param("~resolution",40)
+        self.vgn = VGN("src/vgn/models/vgn_conv.pth")
 
-        self.scene_cloud_pub = rospy.Publisher("scene_cloud", PointCloud2, queue_size=1)
-        self.map_cloud_pub = rospy.Publisher("map_cloud", PointCloud2, queue_size=1)
-        rospy.Subscriber("depth", Image, self.callback)
+        rospy.Service("reset_map", Empty, self.reset)
+        rospy.Service("predict_grasps", PredictGrasps, self.predict_grasps)
+
+        self.cam_frame_id = rospy.get_param("~camera/frame_id","TODO:SetID")
+        self.frame_id = rospy.get_param("~frame_id","TODO:SetID")
+
+        info_topic=rospy.get_param("~camera/info_topic")
+        msg = rospy.wait_for_message(info_topic, CameraInfo)
+        self.intrinsic = from_camera_info_msg(msg)
+
+        tf.init()
+        self.depth_scale = rospy.get_param("~depth_scale",0.001)
+        depth_topic=rospy.get_param("~camera/depth_topic")
+        rospy.Subscriber(depth_topic, Image, self.callback)
 
         self.vis = Visualizer()
+        self.scene_cloud_pub = rospy.Publisher("scene_cloud", PointCloud2, queue_size=1)
+        self.map_cloud_pub = rospy.Publisher("map_cloud", PointCloud2, queue_size=1)
+
         rospy.loginfo("VGN server ready")
 
     def reset(self):
@@ -64,19 +66,16 @@ class VGNServer:
         self.map_cloud_pub.publish(msg)
 
     def predict_grasps(self, req):
-        # Construct the input grid
+        # 创建TSDF网格
         voxel_size = req.voxel_size
         points, distances = from_cloud_msg(req.map_cloud)
         tsdf_grid = map_cloud_to_grid(voxel_size, points, distances)
 
-        # Compute grasps
         out = self.vgn.predict(tsdf_grid)
         grasps, qualities = select_local_maxima(voxel_size, out, threshold=0.9)
 
-        # Visualize detections
-        self.vis.grasps(self.frame, grasps, qualities)
+        self.vis.grasps(self.frame_id, grasps, qualities)
 
-        # Construct the response message
         res = PredictGraspsResponse()
         res.grasps = [to_grasp_config_msg(g, q) for g, q in zip(grasps, qualities)]
         return res
