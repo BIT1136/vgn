@@ -20,7 +20,7 @@ def _init_broadcaster():
 
 def init():
     _init_listener()
-    _init_broadcaster()
+    # _init_broadcaster()
     rospy.sleep(1.0)  # wait for connections to be established
 
 

@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation
 
 
 class Transform:
-    def __init__(self, rotation, translation):
+    def __init__(self, rotation, translation):#xyzw,xyz
         self.rotation = copy.deepcopy(rotation)
         self.translation = np.asarray(translation, np.double).copy()
 

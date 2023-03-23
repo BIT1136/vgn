@@ -9,6 +9,7 @@ from inference.utils import *
 from robot_helpers.ros.conversions import *
 from inference.perception import UniformTSDFVolume
 from robot_helpers.ros import tf
+from robot_helpers import spatial
 
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_srvs.srv import Empty
@@ -21,7 +22,7 @@ class VGNServer:
         self.length = rospy.get_param("~length",0.3)
         self.resolution = rospy.get_param("~resolution",40)
         self.vgn = VGN("src/vgn/models/vgn_conv.pth")
-
+        
         rospy.Service("reset_map", Empty, self.reset)
         rospy.Service("predict_grasps", PredictGrasps, self.predict_grasps)
 
@@ -37,6 +38,7 @@ class VGNServer:
         depth_topic=rospy.get_param("~camera/depth_topic")
         rospy.Subscriber(depth_topic, Image, self.callback)
 
+        self.tsdf = UniformTSDFVolume(self.length, self.resolution)
         self.vis = Visualizer()
         self.scene_cloud_pub = rospy.Publisher("scene_cloud", PointCloud2, queue_size=1)
         self.map_cloud_pub = rospy.Publisher("map_cloud", PointCloud2, queue_size=1)
@@ -44,14 +46,16 @@ class VGNServer:
         rospy.loginfo("VGN server ready")
 
     def reset(self):
-        self.tsdf = UniformTSDFVolume(self.length, self.resolution)
+        # self.tsdf = UniformTSDFVolume(self.length, self.resolution)
+        self.tsdf.reset()
         return
 
     def callback(self, msg):
-        depth=numpify(msg).astype(np.float32)*self.depth_scale
-        extrinsic = tf.lookup(
+        depth=numpify(msg.depth).astype(np.float32)*self.depth_scale
+        extrinsic:spatial.Transform = tf.lookup(
             self.cam_frame_id, self.frame_id, msg.header.stamp, rospy.Duration(0.1)
-        )
+        )#从世界坐标到相机坐标的变换
+        # extrinsic=spatial.Transform(msg.rotation,msg.translation)
         self.tsdf.integrate(depth, self.intrinsic, extrinsic)
 
         scene_cloud = self.tsdf.get_scene_cloud()
@@ -65,11 +69,13 @@ class VGNServer:
         msg = to_cloud_msg(self.frame_id, points, distances=distances)
         self.map_cloud_pub.publish(msg)
 
-    def predict_grasps(self, req):
+    def predict_grasps(self):
         # 创建TSDF网格
-        voxel_size = req.voxel_size
-        points, distances = from_cloud_msg(req.map_cloud)
-        tsdf_grid = map_cloud_to_grid(voxel_size, points, distances)
+        # voxel_size = req.voxel_size
+        # points, distances = from_cloud_msg(req.map_cloud)
+        # tsdf_grid = map_cloud_to_grid(voxel_size, points, distances)
+        voxel_size=self.length/self.resolution
+        tsdf_grid=self.tsdf.get_grid()
 
         out = self.vgn.predict(tsdf_grid)
         grasps, qualities = select_local_maxima(voxel_size, out, threshold=0.9)
