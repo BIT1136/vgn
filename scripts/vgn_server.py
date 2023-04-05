@@ -1,89 +1,126 @@
 #!/root/mambaforge/envs/vgn/bin/python
 
+import numpy as np
+import time
+
 import rospy
 from ros_numpy import numpify
 
+import vgn
 from inference.detection import VGN, select_local_maxima
 from inference.rviz import Visualizer
-from inference.utils import *
-from robot_helpers.ros.conversions import *
+from inference import utils
+from robot_helpers.ros import conversions
 from inference.perception import UniformTSDFVolume
 from robot_helpers.ros import tf
 from robot_helpers import spatial
 
-from sensor_msgs.msg import CameraInfo, Image, PointCloud2
+from sensor_msgs.msg import CameraInfo, Image
 from std_srvs.srv import Empty
-from vgn.srv import PredictGrasps,PredictGraspsResponse
+from vgn.srv import PredictGrasps, PredictGraspsResponse
 
 
 class VGNServer:
     def __init__(self):
-        self.reset()
-        self.length = rospy.get_param("~length",0.3)
-        self.resolution = rospy.get_param("~resolution",40)
+        self.get_ros_params()
+        self.tsdf = UniformTSDFVolume(self.length, self.resolution)
+        self.vis = Visualizer()
+        self.vis.roi(self.base_frame_id, self.length)
+
+        # self.reset()
         self.vgn = VGN("src/vgn/models/vgn_conv.pth")
-        
+
         rospy.Service("reset_map", Empty, self.reset)
         rospy.Service("predict_grasps", PredictGrasps, self.predict_grasps)
 
-        self.cam_frame_id = rospy.get_param("~camera/frame_id","TODO:SetID")
-        self.frame_id = rospy.get_param("~frame_id","TODO:SetID")
-
-        info_topic=rospy.get_param("~camera/info_topic")
-        msg = rospy.wait_for_message(info_topic, CameraInfo)
-        self.intrinsic = from_camera_info_msg(msg)
+        info_topic = rospy.get_param(
+            "~camera/info_topic", "/d435/camera/depth/camera_info"
+        )
+        try:
+            msg = rospy.wait_for_message(info_topic, CameraInfo, 1)
+        except Exception as e:
+            msg = CameraInfo()
+            msg.K = [
+                554.382,
+                0.0,
+                320.0,
+                0.0,
+                554.382,
+                240.0,
+                0.0,
+                0.0,
+                1.0,
+            ]
+            msg.width, msg.height = 640, 480
+            rospy.logwarn(f"{e}, 使用默认相机参数")
+        self.intrinsic = conversions.from_camera_info_msg(msg)
 
         tf.init()
-        self.depth_scale = rospy.get_param("~depth_scale",0.001)
-        depth_topic=rospy.get_param("~camera/depth_topic")
-        rospy.Subscriber(depth_topic, Image, self.callback)
 
-        self.tsdf = UniformTSDFVolume(self.length, self.resolution)
-        self.vis = Visualizer()
-        self.scene_cloud_pub = rospy.Publisher("scene_cloud", PointCloud2, queue_size=1)
-        self.map_cloud_pub = rospy.Publisher("map_cloud", PointCloud2, queue_size=1)
+        depth_topic = rospy.get_param(
+            "~camera/depth_topic", "/d435/camera/depth/image_convert"
+        )
+        rospy.Subscriber(depth_topic, Image, self.callback)
 
         rospy.loginfo("VGN server ready")
 
-    def reset(self):
-        # self.tsdf = UniformTSDFVolume(self.length, self.resolution)
-        self.tsdf.reset()
-        return
+    def get_ros_params(self):
+        self.length = rospy.get_param("~length", 0.3)
+        self.resolution = rospy.get_param("~resolution", 40)
+
+        self.cam_frame_id = rospy.get_param("~camera/frame_id", "depth")
+        self.base_frame_id = rospy.get_param("~frame_id", "object_base")
+
+    def reset(self, msg):
+        rospy.loginfo("重置tsdf")
+        self.tsdf = UniformTSDFVolume(self.length, self.resolution)
+        self.vis.clear()
+        return []
 
     def callback(self, msg):
-        depth=numpify(msg.depth).astype(np.float32)*self.depth_scale
-        extrinsic:spatial.Transform = tf.lookup(
-            self.cam_frame_id, self.frame_id, msg.header.stamp, rospy.Duration(0.1)
-        )#从世界坐标到相机坐标的变换
-        # extrinsic=spatial.Transform(msg.rotation,msg.translation)
+        extrinsic: spatial.Transform = tf.lookup(
+            self.cam_frame_id, self.base_frame_id, msg.header.stamp, rospy.Duration(0.1)
+        )  # 从tsdf基坐标到相机坐标的变换
+        rospy.loginfo(f"进行整合,外参:{extrinsic}")
+        depth = numpify(msg).astype(np.float32) / 1000
         self.tsdf.integrate(depth, self.intrinsic, extrinsic)
 
         scene_cloud = self.tsdf.get_scene_cloud()
         points = np.asarray(scene_cloud.points)
-        msg = to_cloud_msg(self.frame_id, points)
-        self.scene_cloud_pub.publish(msg)
+        self.vis.scene_cloud(self.base_frame_id, points)
 
         map_cloud = self.tsdf.get_map_cloud()
         points = np.asarray(map_cloud.points)
         distances = np.asarray(map_cloud.colors)[:, [0]]
-        msg = to_cloud_msg(self.frame_id, points, distances=distances)
-        self.map_cloud_pub.publish(msg)
+        self.vis.map_cloud(self.base_frame_id, points, distances)
 
-    def predict_grasps(self):
+    def predict_grasps(self, msg):
+        rospy.loginfo("开始推理")
+        t_start = time.perf_counter()
         # 创建TSDF网格
-        # voxel_size = req.voxel_size
-        # points, distances = from_cloud_msg(req.map_cloud)
-        # tsdf_grid = map_cloud_to_grid(voxel_size, points, distances)
-        voxel_size=self.length/self.resolution
-        tsdf_grid=self.tsdf.get_grid()
+        voxel_size = self.length / self.resolution
+        tsdf_grid = self.tsdf.get_grid()
 
         out = self.vgn.predict(tsdf_grid)
         grasps, qualities = select_local_maxima(voxel_size, out, threshold=0.9)
 
-        self.vis.grasps(self.frame_id, grasps, qualities)
+        idx = np.argsort(qualities)[::-1]
+        grasps = grasps[idx]
+        qualities = qualities[idx]
+
+        cam_transform = tf.lookup(self.cam_frame_id,self.base_frame_id)
+        for g in grasps:
+            g.pose = cam_transform * g.pose
+
+        t_end = time.perf_counter()
+        rospy.loginfo(f"推理完成,耗时: {(t_end - t_start)*1000:.2f}ms")
+
+        self.vis.quality(self.base_frame_id, voxel_size, out.qual)
+
+        self.vis.grasps(self.cam_frame_id, grasps, qualities)
 
         res = PredictGraspsResponse()
-        res.grasps = [to_grasp_config_msg(g, q) for g, q in zip(grasps, qualities)]
+        res.grasps = [utils.to_grasp_config_msg(g) for g in grasps]
         return res
 
 

@@ -6,7 +6,8 @@ from robot_helpers.ros.conversions import from_pose_msg, to_pose_msg
 import ros_numpy
 from sensor_msgs.msg import PointCloud2, PointField
 from .grasp import ParallelJawGrasp
-from vgn.msg import GraspConfig
+# from vgn.msg import GraspConfig
+from vgn.msg import GraspCandidate
 
 
 
@@ -50,8 +51,8 @@ def view_on_sphere(origin, r, theta, phi):
     return origin * look_at(eye, target, up)
 
 
-def map_cloud_to_grid(voxel_size, points, distances):
-    grid = np.zeros((40, 40, 40), dtype=np.float32)
+def map_cloud_to_grid(voxel_size, points, distances,resolution=40):
+    grid = np.zeros((resolution,)*3, dtype=np.float32)
     indices = (points // voxel_size).astype(int)
     grid[tuple(indices.T)] = distances.squeeze()
     return grid
@@ -128,9 +129,8 @@ def from_grasp_config_msg(msg):
     return ParallelJawGrasp(pose, msg.width), msg.quality
 
 
-def to_grasp_config_msg(grasp, quality):
-    msg = GraspConfig()
+def to_grasp_config_msg(grasp):
+    msg = GraspCandidate()
     msg.pose = to_pose_msg(grasp.pose)
     msg.width = grasp.width
-    msg.quality = quality
     return msg

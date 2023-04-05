@@ -5,9 +5,12 @@ from scipy.spatial.transform import Rotation
 
 
 class Transform:
-    def __init__(self, rotation, translation):#xyzw,xyz
+    def __init__(self, rotation:Rotation, translation):#xyzw,xyz
         self.rotation = copy.deepcopy(rotation)
         self.translation = np.asarray(translation, np.double).copy()
+
+    def __str__(self):
+        return self.translation.__str__()+self.rotation.as_euler("xyz",True).__str__()
 
     @classmethod
     def from_rotation(cls, rotation):
