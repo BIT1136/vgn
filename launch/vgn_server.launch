@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="vgn" type="vgn_server.py" name="vgn_server" cwd="node" output="screen"/>
+</launch>

@@ -27,17 +27,11 @@ class VGNServer:
         self.vis = Visualizer()
         self.vis.roi(self.base_frame_id, self.length)
 
-        # self.reset()
-        self.vgn = VGN("src/vgn/models/vgn_conv.pth")
+        self.vgn = VGN("../models/vgn_conv.pth")
+        tf.init()
 
-        rospy.Service("reset_map", Empty, self.reset)
-        rospy.Service("predict_grasps", PredictGrasps, self.predict_grasps)
-
-        info_topic = rospy.get_param(
-            "~camera/info_topic", "/d435/camera/depth/camera_info"
-        )
         try:
-            msg = rospy.wait_for_message(info_topic, CameraInfo, 1)
+            msg = rospy.wait_for_message(self.info_topic, CameraInfo, 1)
         except Exception as e:
             msg = CameraInfo()
             msg.K = [
@@ -55,14 +49,11 @@ class VGNServer:
             rospy.logwarn(f"{e}, 使用默认相机参数")
         self.intrinsic = conversions.from_camera_info_msg(msg)
 
-        tf.init()
+        rospy.Service(f"{rospy.get_name()}/reset_map", Empty, self.reset)
+        rospy.Service(f"{rospy.get_name()}/predict_grasps", PredictGrasps, self.predict_grasps)
+        rospy.Subscriber(self.depth_topic, Image, self.callback)
 
-        depth_topic = rospy.get_param(
-            "~camera/depth_topic", "/d435/camera/depth/image_convert"
-        )
-        rospy.Subscriber(depth_topic, Image, self.callback)
-
-        rospy.loginfo("VGN server ready")
+        rospy.loginfo(f"{rospy.get_name()}节点就绪")
 
     def get_ros_params(self):
         self.length = rospy.get_param("~length", 0.3)
@@ -70,6 +61,13 @@ class VGNServer:
 
         self.cam_frame_id = rospy.get_param("~camera/frame_id", "depth")
         self.base_frame_id = rospy.get_param("~frame_id", "object_base")
+
+        self.info_topic = rospy.get_param(
+            "~camera/info_topic", "/d435/camera/depth/camera_info"
+        )
+        self.depth_topic = rospy.get_param(
+            "~camera/depth_topic", "/d435/camera/depth/image_convert"
+        )
 
     def reset(self, msg):
         rospy.loginfo("重置tsdf")
@@ -114,9 +112,12 @@ class VGNServer:
 
         t_end = time.perf_counter()
         rospy.loginfo(f"推理完成,耗时: {(t_end - t_start)*1000:.2f}ms")
+        if len(grasps) == 0:
+            raise rospy.ServiceException("未检测到抓取")
+        else:
+            rospy.loginfo(f"检测到 {len(grasps)} 个抓取候选: {[str(g) for g in grasps]}")
 
         self.vis.quality(self.base_frame_id, voxel_size, out.qual)
-
         self.vis.grasps(self.cam_frame_id, grasps, qualities)
 
         res = PredictGraspsResponse()

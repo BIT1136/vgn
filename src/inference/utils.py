@@ -132,5 +132,4 @@ def from_grasp_config_msg(msg):
 def to_grasp_config_msg(grasp):
     msg = GraspCandidate()
     msg.pose = to_pose_msg(grasp.pose)
-    msg.width = grasp.width
     return msg
