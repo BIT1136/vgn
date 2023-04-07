@@ -27,7 +27,6 @@ generate_messages(
 )
 
 catkin_package(
-
 )
 
 include_directories(

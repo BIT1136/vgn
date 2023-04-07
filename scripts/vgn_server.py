@@ -3,8 +3,13 @@
 import numpy as np
 import time
 
+import torch
+
 import rospy
 from ros_numpy import numpify
+from sensor_msgs.msg import CameraInfo, Image
+from std_srvs.srv import Empty
+from vgn.srv import PredictGrasps, PredictGraspsResponse
 
 import vgn
 from inference.detection import VGN, select_local_maxima
@@ -15,19 +20,19 @@ from inference.perception import UniformTSDFVolume
 from robot_helpers.ros import tf
 from robot_helpers import spatial
 
-from sensor_msgs.msg import CameraInfo, Image
-from std_srvs.srv import Empty
-from vgn.srv import PredictGrasps, PredictGraspsResponse
-
 
 class VGNServer:
     def __init__(self):
         self.get_ros_params()
+
+        model_path = "../models/vgn_conv.pth"
+        rospy.logdebug(f"加载抓取规划网络 {model_path}")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.vgn = VGN(model_path, self.device)
+        self.resolution=self.vgn.resolution
         self.tsdf = UniformTSDFVolume(self.length, self.resolution)
         self.vis = Visualizer()
         self.vis.roi(self.base_frame_id, self.length)
-
-        self.vgn = VGN("../models/vgn_conv.pth")
         tf.init()
 
         try:
@@ -50,14 +55,19 @@ class VGNServer:
         self.intrinsic = conversions.from_camera_info_msg(msg)
 
         rospy.Service(f"{rospy.get_name()}/reset_map", Empty, self.reset)
-        rospy.Service(f"{rospy.get_name()}/predict_grasps", PredictGrasps, self.predict_grasps)
+        rospy.Service(
+            f"{rospy.get_name()}/predict_grasps", PredictGrasps, self.predict_grasps
+        )
         rospy.Subscriber(self.depth_topic, Image, self.callback)
 
         rospy.loginfo(f"{rospy.get_name()}节点就绪")
 
     def get_ros_params(self):
+        self.apply_seg = rospy.get_param("~apply_seg", True)
+        """是否使用额外的实例分割网络以增强效果"""
+
         self.length = rospy.get_param("~length", 0.3)
-        self.resolution = rospy.get_param("~resolution", 40)
+        """TSDF体积的边长"""
 
         self.cam_frame_id = rospy.get_param("~camera/frame_id", "depth")
         self.base_frame_id = rospy.get_param("~frame_id", "object_base")
@@ -77,7 +87,7 @@ class VGNServer:
 
     def callback(self, msg):
         extrinsic: spatial.Transform = tf.lookup(
-            self.cam_frame_id, self.base_frame_id, msg.header.stamp, rospy.Duration(0.1)
+            self.cam_frame_id, self.base_frame_id, msg.header.stamp
         )  # 从tsdf基坐标到相机坐标的变换
         rospy.loginfo(f"进行整合,外参:{extrinsic}")
         depth = numpify(msg).astype(np.float32) / 1000
@@ -106,7 +116,7 @@ class VGNServer:
         grasps = grasps[idx]
         qualities = qualities[idx]
 
-        cam_transform = tf.lookup(self.cam_frame_id,self.base_frame_id)
+        cam_transform = tf.lookup(self.cam_frame_id, self.base_frame_id)
         for g in grasps:
             g.pose = cam_transform * g.pose
 

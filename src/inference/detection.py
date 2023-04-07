@@ -17,12 +17,14 @@ class Output:
 
 
 class VGN:
-    def __init__(self, model_path):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, model_path,device):
+        self.resolution=40
+
+        self.device = device
         self.net = load_network(model_path, self.device)
 
     def predict(self, tsdf, sigma=1.0):
-        assert tsdf.shape == (40, 40, 40)
+        assert tsdf.shape == (self.resolution,)*3
         tsdf_in = torch.from_numpy(tsdf)[None, None, :].to(self.device)
         with torch.no_grad():
             qual, rot, width = self.net(tsdf_in)
@@ -34,6 +36,7 @@ class VGN:
         qual = ndimage.gaussian_filter(qual, sigma, mode="nearest")
 
         # Mask out voxels too far away from the surface
+        # 表面外侧体素向外膨胀
         outside_voxels = tsdf > 0.5
         inside_voxels = np.logical_and(1e-3 < tsdf, tsdf < 0.5)
         valid_voxels = ndimage.morphology.binary_dilation(
