@@ -58,6 +58,10 @@ def select_local_maxima(
     grasps, qualities = [], []
     for index in index_list:
         grasp, quality = select_at(out, index)
+        vec=np.array([[0],[0],[1]])
+        outvec=grasp.pose.rotation.apply(vec)
+        if outvec[2]<0:
+            continue
         grasps.append(grasp)
         qualities.append(quality)
     grasps = np.array([from_voxel_coordinates(voxel_size, g) for g in grasps])

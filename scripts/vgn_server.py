@@ -6,15 +6,16 @@ import time
 import torch
 
 import rospy
-from ros_numpy import numpify
+import ros_numpy
 from sensor_msgs.msg import CameraInfo, Image
 from std_srvs.srv import Empty
+from vgn.srv import SetTSDFBase,Integrate
 from vgn.srv import PredictGrasps, PredictGraspsResponse
 
 import vgn
 from inference.detection import VGN, select_local_maxima
 from inference.rviz import Visualizer
-from inference import utils
+import inference.utils as utils
 from robot_helpers.ros import conversions
 from inference.perception import UniformTSDFVolume
 from robot_helpers.ros import tf
@@ -26,9 +27,9 @@ class VGNServer:
         self.get_ros_params()
 
         model_path = "../models/vgn_conv.pth"
-        rospy.logdebug(f"加载抓取规划网络 {model_path}")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.vgn = VGN(model_path, self.device)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        rospy.logdebug(f"加载抓取规划网络 {model_path} 至 {device}")
+        self.vgn = VGN(model_path, device)
         self.resolution=self.vgn.resolution
         self.tsdf = UniformTSDFVolume(self.length, self.resolution)
         self.vis = Visualizer()
@@ -54,11 +55,12 @@ class VGNServer:
             rospy.logwarn(f"{e}, 使用默认相机参数")
         self.intrinsic = conversions.from_camera_info_msg(msg)
 
+        rospy.Service(f"{rospy.get_name()}/integrate",Integrate,self.integrate)
         rospy.Service(f"{rospy.get_name()}/reset_map", Empty, self.reset)
         rospy.Service(
             f"{rospy.get_name()}/predict_grasps", PredictGrasps, self.predict_grasps
         )
-        rospy.Subscriber(self.depth_topic, Image, self.callback)
+        rospy.Subscriber(self.depth_topic, Image, self.integrate)
 
         rospy.loginfo(f"{rospy.get_name()}节点就绪")
 
@@ -84,13 +86,19 @@ class VGNServer:
         self.tsdf = UniformTSDFVolume(self.length, self.resolution)
         self.vis.clear()
         return []
-
-    def callback(self, msg):
-        extrinsic: spatial.Transform = tf.lookup(
-            self.cam_frame_id, self.base_frame_id, msg.header.stamp
-        )  # 从tsdf基坐标到相机坐标的变换
+    
+    def integrate(self, msg):
+        if hasattr(msg,"extrinsic"):
+            rospy.logdebug("从服务调用中获取外参")
+            extrinsic = conversions.from_transform_msg(msg.extrinsic)
+            depth=ros_numpy.numpify(msg.depth).astype(np.float32)/ 1000
+        else:
+            rospy.logdebug("从tf树中获取外参")
+            extrinsic: spatial.Transform = tf.lookup(
+                self.cam_frame_id, self.base_frame_id, msg.header.stamp
+            )  # 从tsdf基坐标到相机坐标的变换
+            depth = ros_numpy.numpify(msg).astype(np.float32) / 1000
         rospy.loginfo(f"进行整合,外参:{extrinsic}")
-        depth = numpify(msg).astype(np.float32) / 1000
         self.tsdf.integrate(depth, self.intrinsic, extrinsic)
 
         scene_cloud = self.tsdf.get_scene_cloud()
@@ -102,7 +110,7 @@ class VGNServer:
         distances = np.asarray(map_cloud.colors)[:, [0]]
         self.vis.map_cloud(self.base_frame_id, points, distances)
 
-    def predict_grasps(self, msg):
+    def predict_grasps(self, req):
         rospy.loginfo("开始推理")
         t_start = time.perf_counter()
         # 创建TSDF网格
