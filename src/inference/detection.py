@@ -23,6 +23,9 @@ class VGN:
         self.device = device
         self.net = load_network(model_path, self.device)
 
+        unlazy=torch.zeros((1,)+(self.resolution,)*3,device=self.device)
+        self.net(unlazy)
+
     def predict(self, tsdf, sigma=1.0):
         assert tsdf.shape == (self.resolution,)*3
         tsdf_in = torch.from_numpy(tsdf)[None, None, :].to(self.device)
@@ -58,10 +61,11 @@ def select_local_maxima(
     grasps, qualities = [], []
     for index in index_list:
         grasp, quality = select_at(out, index)
-        vec=np.array([[0],[0],[1]])
-        outvec=grasp.pose.rotation.apply(vec)
-        if outvec[2]<0:
-            continue
+        # vec=np.array([0,0,1])
+        # outvec=grasp.pose.rotation.apply(vec)
+        # if outvec[2]<0:
+        #     print("方向朝上，放弃")
+        #     continue
         grasps.append(grasp)
         qualities.append(quality)
     grasps = np.array([from_voxel_coordinates(voxel_size, g) for g in grasps])

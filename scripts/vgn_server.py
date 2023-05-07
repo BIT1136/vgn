@@ -9,7 +9,7 @@ import rospy
 import ros_numpy
 from sensor_msgs.msg import CameraInfo, Image
 from std_srvs.srv import Empty
-from vgn.srv import SetTSDFBase,Integrate
+from vgn.srv import Integrate,IntegrateResponse
 from vgn.srv import PredictGrasps, PredictGraspsResponse
 
 import vgn
@@ -34,6 +34,7 @@ class VGNServer:
         self.tsdf = UniformTSDFVolume(self.length, self.resolution)
         self.vis = Visualizer()
         self.vis.roi(self.base_frame_id, self.length)
+        self.vis.clear()
         tf.init()
 
         try:
@@ -65,14 +66,11 @@ class VGNServer:
         rospy.loginfo(f"{rospy.get_name()}节点就绪")
 
     def get_ros_params(self):
-        self.apply_seg = rospy.get_param("~apply_seg", True)
-        """是否使用额外的实例分割网络以增强效果"""
-
         self.length = rospy.get_param("~length", 0.3)
         """TSDF体积的边长"""
 
         self.cam_frame_id = rospy.get_param("~camera/frame_id", "depth")
-        self.base_frame_id = rospy.get_param("~frame_id", "object_base")
+        self.base_frame_id = rospy.get_param("~frame_id", "tsdf_base")
 
         self.info_topic = rospy.get_param(
             "~camera/info_topic", "/d435/camera/depth/camera_info"
@@ -88,11 +86,11 @@ class VGNServer:
         return []
     
     def integrate(self, msg):
-        if hasattr(msg,"extrinsic"):
+        if hasattr(msg,"extrinsic"):#integrate服务回调
             rospy.logdebug("从服务调用中获取外参")
             extrinsic = conversions.from_transform_msg(msg.extrinsic)
             depth=ros_numpy.numpify(msg.depth).astype(np.float32)/ 1000
-        else:
+        else:#depth_topic话题回调
             rospy.logdebug("从tf树中获取外参")
             extrinsic: spatial.Transform = tf.lookup(
                 self.cam_frame_id, self.base_frame_id, msg.header.stamp
@@ -109,6 +107,7 @@ class VGNServer:
         points = np.asarray(map_cloud.points)
         distances = np.asarray(map_cloud.colors)[:, [0]]
         self.vis.map_cloud(self.base_frame_id, points, distances)
+        return IntegrateResponse()
 
     def predict_grasps(self, req):
         rospy.loginfo("开始推理")
@@ -118,7 +117,8 @@ class VGNServer:
         tsdf_grid = self.tsdf.get_grid()
 
         out = self.vgn.predict(tsdf_grid)
-        grasps, qualities = select_local_maxima(voxel_size, out, threshold=0.9)
+        self.vis.quality(self.base_frame_id, voxel_size, out.qual)
+        grasps, qualities = select_local_maxima(voxel_size, out, threshold=0.75)
 
         idx = np.argsort(qualities)[::-1]
         grasps = grasps[idx]
@@ -130,12 +130,12 @@ class VGNServer:
 
         t_end = time.perf_counter()
         rospy.loginfo(f"推理完成,耗时: {(t_end - t_start)*1000:.2f}ms")
+        print(grasps,qualities)
         if len(grasps) == 0:
-            raise rospy.ServiceException("未检测到抓取")
+            return PredictGraspsResponse()
         else:
             rospy.loginfo(f"检测到 {len(grasps)} 个抓取候选: {[str(g) for g in grasps]}")
 
-        self.vis.quality(self.base_frame_id, voxel_size, out.qual)
         self.vis.grasps(self.cam_frame_id, grasps, qualities)
 
         res = PredictGraspsResponse()
@@ -144,6 +144,6 @@ class VGNServer:
 
 
 if __name__ == "__main__":
-    rospy.init_node("vgn_server")
+    rospy.init_node("vgn_server",log_level=rospy.DEBUG)
     VGNServer()
     rospy.spin()

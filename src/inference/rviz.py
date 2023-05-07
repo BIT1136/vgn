@@ -8,7 +8,7 @@ cm = lambda s: tuple([float(1 - s), float(s), float(0)])
 
 
 class Visualizer:
-    def __init__(self, base_frame="panda_link0"):
+    def __init__(self, base_frame="tsdf_base"):
         self.base_frame = base_frame
         self.create_marker_publisher()
         self.create_scene_cloud_publisher()
