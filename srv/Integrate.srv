@@ -1,4 +1,5 @@
-# 向tsdf整合深度图.extrinsic:从tsdf基坐标到相机坐标的变换,depth:深度图,单位为毫米
+# 向tsdf整合深度图
+# extrinsic:从tsdf基坐标到相机坐标的变换,depth:深度图,单位为毫米
 geometry_msgs/Transform extrinsic
 sensor_msgs/Image depth
 ---

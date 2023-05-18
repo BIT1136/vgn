@@ -129,7 +129,8 @@ def from_grasp_config_msg(msg):
     return ParallelJawGrasp(pose, msg.width), msg.quality
 
 
-def to_grasp_config_msg(grasp):
+def to_grasp_config_msg(grasp,quality):
     msg = GraspCandidate()
     msg.pose = to_pose_msg(grasp.pose)
+    msg.quality=quality
     return msg

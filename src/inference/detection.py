@@ -23,7 +23,7 @@ class VGN:
         self.device = device
         self.net = load_network(model_path, self.device)
 
-        unlazy=torch.zeros((1,)+(self.resolution,)*3,device=self.device)
+        unlazy=torch.zeros((1,1,)+(self.resolution,)*3,device=self.device)
         self.net(unlazy)
 
     def predict(self, tsdf, sigma=1.0):

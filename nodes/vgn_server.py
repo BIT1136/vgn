@@ -73,7 +73,7 @@ class VGNServer:
         self.base_frame_id = rospy.get_param("~frame_id", "tsdf_base")
 
         self.info_topic = rospy.get_param(
-            "~camera/info_topic", "/d435/camera/depth/camera_info"
+            "~camera/info_topic", "/camera/color/camera_info"
         )
         self.depth_topic = rospy.get_param(
             "~camera/depth_topic", "/d435/camera/depth/image_convert"
@@ -124,13 +124,8 @@ class VGNServer:
         grasps = grasps[idx]
         qualities = qualities[idx]
 
-        cam_transform = tf.lookup(self.cam_frame_id, self.base_frame_id)
-        for g in grasps:
-            g.pose = cam_transform * g.pose
-
         t_end = time.perf_counter()
         rospy.loginfo(f"推理完成,耗时: {(t_end - t_start)*1000:.2f}ms")
-        print(grasps,qualities)
         if len(grasps) == 0:
             return PredictGraspsResponse()
         else:
@@ -139,7 +134,7 @@ class VGNServer:
         self.vis.grasps(self.cam_frame_id, grasps, qualities)
 
         res = PredictGraspsResponse()
-        res.grasps = [utils.to_grasp_config_msg(g) for g in grasps]
+        res.grasps = [utils.to_grasp_config_msg(g,q) for g,q in zip(grasps,qualities)]
         return res
 
 
