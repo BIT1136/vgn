@@ -4,13 +4,13 @@
 
 ## 安装依赖
 
-    conda create -n vgn python=3.10 pytorch numpy scipy scikit-image catkin_pkg
+    conda create -c conda-forge -n vgn python=3.10 pytorch numpy scipy scikit-image catkin_pkg
 
 ## 训练模型
 
 使用原仓库并遵循其说明以进行训练，依赖安装方式为：
 
-    conda create -n vgn python numpy=1.19 mpi4py pandas pybullet pytorch pytorch-ignite pyyaml scikit-image scipy tensorboard tqdm mayavi
+    conda create -c conda-forge -n vgn python numpy=1.19 mpi4py pandas pybullet pytorch pytorch-ignite pyyaml scikit-image scipy tensorboard tqdm mayavi
     pip install open3d
 
 使用numpy=1.19以兼容原仓库代码中的`np.long`
@@ -46,13 +46,16 @@ scene_grasp_count: 200
 metric: dynamic_with_approach
 ```
 
-    使用process_data.ipynb
+使用process_data.ipynb
 
     ln -s /home/yangzhuo/references/vgn/data/grasps/packed/*.npz /home/yangzhuo/references/vgn/data/grasps/train/ -r
     ln -s /home/yangzhuo/references/vgn/data/grasps/pile/*.npz /home/yangzhuo/references/vgn/data/grasps/train/ -r
 
+生成训练数据集
+
     python scripts/create_dataset.py  data/grasps/train data/dataset/train
 
-    python scripts/train_vgn.py --dataset data/dataset/train --augment --logdir logs
+训练与可视化
 
+    python scripts/train_vgn.py --dataset data/dataset/train --augment --logdir logs
     tensorboard --logdir logs
