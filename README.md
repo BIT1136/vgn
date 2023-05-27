@@ -15,17 +15,17 @@
 
 使用numpy=1.19以兼容原仓库代码中的`np.long`
 
-需要修改源代码simulation.py中的文件名
+需要修改源代码simulation.py中的文件名。
 
 生成数据（一堆方块）
 
-    ln -s /home/yangzhuo/references/robot_helpers/robot_helpers /home/yangzhuo/references/vgn/scripts/robot_helpers
-    ln -s /home/yangzhuo/references/vgn/src/vgn /home/yangzhuo/references/vgn/scripts/vgn
-    LD_LIBRARY_PATH=/home/yangzhuo/mambaforge/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/blocks
+    ln -s <path-to>/robot_helpers/robot_helpers <path-to>/vgn/scripts/robot_helpers
+    ln -s <path-to>/vgn/src/vgn <path-to>/vgn/scripts/vgn
+    LD_LIBRARY_PATH=/home/<user-name>/miniconda/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/blocks
 
-生成pakced（需要修改源代码generate_data.py中generate_pile为generate_packed）
+生成两种数据，需要修改generate_data.py中的逻辑（添加--mode并判断调用generate_pile还是generate_packed）
 
-    LD_LIBRARY_PATH=/home/yangzhuo/mambaforge/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/pile --cfg cfg/sim/pile.yaml --count 750000 --mode 1 && LD_LIBRARY_PATH=/home/yangzhuo/mambaforge/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/packed --cfg cfg/sim/packed.yaml --count 2000000 --mode 0
+    LD_LIBRARY_PATH=/home/<user-name>/miniconda/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/pile --cfg cfg/sim/pile.yaml --count 750000 --mode 1 && LD_LIBRARY_PATH=/home/<user-name>/miniconda/envs/vgn/lib  mpirun -np 6 python3 scripts/generate_data.py --root=data/grasps/packed --cfg cfg/sim/packed.yaml --count 2000000 --mode 0
 
 packed.yaml
 ```
@@ -48,8 +48,8 @@ metric: dynamic_with_approach
 
 使用process_data.ipynb
 
-    ln -s /home/yangzhuo/references/vgn/data/grasps/packed/*.npz /home/yangzhuo/references/vgn/data/grasps/train/ -r
-    ln -s /home/yangzhuo/references/vgn/data/grasps/pile/*.npz /home/yangzhuo/references/vgn/data/grasps/train/ -r
+    ln -s <path-to>/vgn/data/grasps/packed/*.npz <path-to>/vgn/data/grasps/train/ -r
+    ln -s <path-to>/vgn/data/grasps/pile/*.npz <path-to>/vgn/data/grasps/train/ -r
 
 生成训练数据集
 
