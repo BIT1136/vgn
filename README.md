@@ -1,6 +1,6 @@
 # vgn
 
-代码主要来自 https://github.com/ethz-asl/vgn/tree/devel , 即论文 [Volumetric Grasping Network: Real-time 6 DOF Grasp Detection in Clutter](http://arxiv.org/abs/2101.01132). `src/inference` 来自原存储库中的 `src/vgn`, `src/robot_helpers` 来自[这个](https://github.com/mbreyer/robot_helpers)仓库.
+https://github.com/ethz-asl/vgn/tree/devel 的另一种 ROS 包装，代码也主要来自此仓库；原论文为 [Volumetric Grasping Network: Real-time 6 DOF Grasp Detection in Clutter](http://arxiv.org/abs/2101.01132). `src/inference` 来自原存储库中的 `src/vgn`, `src/robot_helpers` 来自[这个](https://github.com/mbreyer/robot_helpers)仓库.
 
 ## 安装依赖
 
